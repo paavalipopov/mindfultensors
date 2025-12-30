@@ -1,8 +1,12 @@
+import lz4.frame
 import torch
 import io
 import numpy as np
 from typing import Sized
 from torch.utils.data.sampler import Sampler
+
+# LZ4 Frame magic bytes: 0x04224D18 (little-endian)
+LZ4_MAGIC = b"\x04\x22\x4d\x18"
 
 
 def unit_interval_normalize(img):
@@ -18,6 +22,10 @@ def qnormalize(img, qmin=0.01, qmax=0.99):
 
 
 def mtransform(tensor_binary):
+    # Check if data is LZ4 compressed by looking for magic bytes
+    if tensor_binary[:4] == LZ4_MAGIC:
+        tensor_binary = lz4.frame.decompress(tensor_binary)
+
     buffer = io.BytesIO(tensor_binary)
     tensor = torch.load(buffer, weights_only=True)
     return tensor
@@ -106,9 +114,7 @@ class DBBatchSampler(Sampler):
     def __iter__(self):
         if self.seed is not None:
             np.random.seed(self.seed)
-        return self.__chunks__(
-            np.random.permutation(self.data_size), self.batch_size
-        )
+        return self.__chunks__(np.random.permutation(self.data_size), self.batch_size)
 
     def __len__(self):
         return (
